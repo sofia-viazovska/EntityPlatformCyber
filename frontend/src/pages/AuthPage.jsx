@@ -15,10 +15,10 @@ export default function AuthPage() {
       if (mode === 'register') {
         r = await api.post('/register', { email, password })
       } else {
-        const form = new FormData()
-        form.append('username', email)
-        form.append('password', password)
-        r = await api.post('/login', form, { headers: { 'Content-Type': 'application/x-www-form-urlencoded' } })
+        const params = new URLSearchParams()
+        params.append('username', email)
+        params.append('password', password)
+        r = await api.post('/login', params)
       }
       setToken(r.data.access_token)
       window.location.href = '/map'
