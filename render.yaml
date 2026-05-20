@@ -1,0 +1,34 @@
+services:
+  - type: web
+    name: entity-platform-api
+    runtime: docker
+    plan: starter
+    region: frankfurt
+    dockerContext: ./backend
+    dockerfilePath: ./backend/Dockerfile
+    healthCheckPath: /
+    envVars:
+      - key: DATABASE_URL
+        sync: false
+      - key: SECRET_KEY
+        generateValue: true
+      - key: CORS_ORIGINS
+        value: "*"
+      - key: SEED_DEMO_DATA
+        value: "true"
+      - key: WEB_CONCURRENCY
+        value: "2"
+
+  - type: web
+    name: entity-platform
+    runtime: static
+    rootDir: frontend
+    buildCommand: npm ci && npm run build
+    staticPublishPath: dist
+    envVars:
+      - key: VITE_API_URL
+        value: https://entity-platform-api.onrender.com
+    routes:
+      - type: rewrite
+        source: /*
+        destination: /index.html

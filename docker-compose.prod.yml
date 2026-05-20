@@ -1,0 +1,23 @@
+services:
+  backend:
+    build: ./backend
+    restart: unless-stopped
+    environment:
+      - DATABASE_URL=${DATABASE_URL}
+      - SECRET_KEY=${SECRET_KEY}
+      - CORS_ORIGINS=${CORS_ORIGINS}
+      - SEED_DEMO_DATA=${SEED_DEMO_DATA:-true}
+      - WEB_CONCURRENCY=${WEB_CONCURRENCY:-2}
+    ports:
+      - "8000:8000"
+
+  frontend:
+    build:
+      context: ./frontend
+      args:
+        - VITE_API_URL=${VITE_API_URL:-/api}
+    restart: unless-stopped
+    ports:
+      - "80:80"
+    depends_on:
+      - backend

@@ -1,3 +1,5 @@
+import os
+
 from fastapi import FastAPI, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from app.api.endpoints import endpoints
@@ -13,10 +15,20 @@ except Exception as e:
 
 app = FastAPI(title="Entity Platform API")
 
+
+def get_cors_origins():
+    origins = os.getenv("CORS_ORIGINS", "*")
+    if origins == "*":
+        return ["*"]
+    return [origin.strip() for origin in origins.split(",") if origin.strip()]
+
+
+cors_origins = get_cors_origins()
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
+    allow_origins=cors_origins,
+    allow_credentials="*" not in cors_origins,
     allow_methods=["*"],
     allow_headers=["*"],
 )
