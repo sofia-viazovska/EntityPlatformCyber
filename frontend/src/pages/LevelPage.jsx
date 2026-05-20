@@ -2,6 +2,9 @@ import { useEffect, useState } from 'react'
 import { useParams, Link } from 'react-router-dom'
 import { api } from '../api/client'
 
+const POINTS_PER_PART = 25
+const LEVEL_FULL_SCORE = 100
+
 export default function LevelPage() {
   const { id } = useParams()
   const [level, setLevel] = useState(null)
@@ -50,7 +53,7 @@ export default function LevelPage() {
             // If correct, show success result and add to score
             if (s.is_correct) {
               if (!newResults[s.part] || !newResults[s.part].is_correct) {
-                newScore += 20
+                newScore += POINTS_PER_PART
               }
               newResults[s.part] = { is_correct: true, message: 'Already solved' }
             } else {
@@ -112,14 +115,13 @@ export default function LevelPage() {
     try {
       const r = await api.post('/submit', { level_id: Number(id), part: String(key), answer: answers[key] })
       setResults(prev => ({ ...prev, [key]: r.data }))
+      setAttemptsLeft(prev => ({ ...prev, [key]: Math.max(0, prev[key] - 1) }))
       if (r.data.is_correct && r.data.message === 'Correct!') {
         // Do not clear the answer anymore as requested
-        setScore(prev => prev + 20)
+        setScore(prev => prev + POINTS_PER_PART)
       }
     } catch (e) {
       setErrors(prev => ({ ...prev, [key]: e.response?.data?.detail || 'Submission failed' }))
-    } finally {
-      setAttemptsLeft(prev => ({ ...prev, [key]: Math.max(0, prev[key] - 1) }))
     }
   }
 
@@ -255,12 +257,12 @@ export default function LevelPage() {
             <div className="w-full bg-white/5 h-1.5 rounded-full overflow-hidden">
                <div 
                  className="h-full bg-cyber-accent transition-all duration-500" 
-                 style={{ width: `${(score / 80) * 100}%` }}
+                 style={{ width: `${(score / LEVEL_FULL_SCORE) * 100}%` }}
                />
             </div>
           </div>
 
-          {score < 80 && Object.entries(attemptsLeft).some(([key, attempts]) => attempts === 0 && !results[key]?.is_correct) && (
+          {score < LEVEL_FULL_SCORE && Object.entries(attemptsLeft).some(([key, attempts]) => attempts === 0 && !results[key]?.is_correct) && (
             <button 
               onClick={generateMathProblem}
               className="w-full py-4 bg-red-500/10 border border-red-500/50 text-red-500 rounded-2xl font-black uppercase tracking-widest hover:bg-red-500 hover:text-white transition-all shadow-[0_0_20px_rgba(239,68,68,0.2)]"

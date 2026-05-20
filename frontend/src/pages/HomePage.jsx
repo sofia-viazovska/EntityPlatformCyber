@@ -2,6 +2,8 @@ import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { api } from '../api/client'
 
+const DEMO_END_TIME = '2026-05-30T14:00:00+03:00'
+
 function Countdown({ start, end, active }) {
   const [now, setNow] = useState(new Date())
   useEffect(() => {
@@ -9,7 +11,7 @@ function Countdown({ start, end, active }) {
     return () => clearInterval(t)
   }, [])
   if (!active) return <div className="text-red-400">MISSION TERMINATED</div>
-  const endDate = end ? new Date(end) : null
+  const endDate = new Date(end || DEMO_END_TIME)
   const diff = endDate ? Math.max(0, endDate - now) : 0
   const h = Math.floor(diff / 3600000)
   const m = Math.floor((diff % 3600000) / 60000)

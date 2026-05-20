@@ -9,6 +9,9 @@ class UserBase(BaseModel):
 class UserCreate(UserBase):
     password: str
 
+class UserUpdate(BaseModel):
+    name: Optional[str] = None
+
 class UserResponse(UserBase):
     id: int
     total_score: int
@@ -68,6 +71,13 @@ class LeaderboardEntry(BaseModel):
     name: Optional[str] = None
     total_score: int
     level_scores: List[LevelScore]
+
+class LeaderboardResponse(BaseModel):
+    entries: List[LeaderboardEntry]
+    page: int
+    page_size: int
+    total: int
+    total_pages: int
 
 class GameStateResponse(BaseModel):
     start_time: Optional[datetime]

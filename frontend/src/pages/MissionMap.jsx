@@ -3,6 +3,21 @@ import { Link } from 'react-router-dom'
 import { api } from '../api/client'
 import { MapPin, Lock, CheckCircle2, ChevronRight } from 'lucide-react'
 
+const REQUIRED_PARTS = ['a', '2', '3', 'final']
+
+function solvedPartCount(level) {
+  const solved = new Set(
+    level.submissions
+      ?.filter((submission) => submission.is_correct)
+      .map((submission) => submission.part) || []
+  )
+  return solved.size
+}
+
+function isLevelCompleted(level) {
+  return solvedPartCount(level) >= REQUIRED_PARTS.length
+}
+
 export default function MissionMap() {
   const [levels, setLevels] = useState([])
   const [hoveredLevel, setHoveredLevel] = useState(null)
@@ -19,12 +34,17 @@ export default function MissionMap() {
           { id: 3, name: 'Home Sweet Home, China', x_percent: 75, y_percent: 40, unlocked: false, points: 100, order_index: 3 },
           { id: 4, name: 'Diplomatic Gala, France', x_percent: 45, y_percent: 30, unlocked: false, points: 100, order_index: 4 },
           { id: 5, name: 'Secret Laboratory, Australia', x_percent: 85, y_percent: 70, unlocked: false, points: 100, order_index: 5 },
-          { id: 6, name: 'Final Destination, Antarctica', x_percent: 60, y_percent: 90, unlocked: false, points: 0, order_index: 6 },
+          { id: 6, name: 'Final Destination, Antarctica', x_percent: 60, y_percent: 90, unlocked: false, points: 100, order_index: 6 },
         ])
       })
   }, [])
 
   const sortedLevels = [...levels].sort((a, b) => a.order_index - b.order_index)
+  const completedCount = levels.filter(isLevelCompleted).length
+  const nodeProgressPercent = levels.length > 0 ? (completedCount / levels.length) * 100 : 0
+  const completedTaskCount = levels.reduce((sum, level) => sum + solvedPartCount(level), 0)
+  const totalTaskCount = levels.length * REQUIRED_PARTS.length
+  const taskProgressPercent = totalTaskCount > 0 ? (completedTaskCount / totalTaskCount) * 100 : 0
 
   return (
     <div className="flex flex-col h-[calc(100vh-120px)] space-y-6">
@@ -77,61 +97,74 @@ export default function MissionMap() {
 
         {/* Level Markers */}
         <div className="absolute inset-0 z-20">
-          {levels.map((level) => (
-            <div
-              key={level.id}
-              className="absolute"
-              style={{ 
-                left: `${level.x_percent}%`, 
-                top: `${level.y_percent}%`,
-                transform: 'translate(-50%, -50%)'
-              }}
-              onMouseEnter={() => setHoveredLevel(level)}
-              onMouseLeave={() => setHoveredLevel(null)}
-            >
-              <Link
-                to={level.unlocked ? `/level/${level.id}` : '#'}
-                className={`relative flex items-center justify-center transition-all duration-300 ${
-                  level.unlocked 
-                    ? 'cursor-pointer hover:scale-125' 
-                    : 'cursor-not-allowed opacity-60 grayscale'
-                }`}
+          {levels.map((level) => {
+            const completed = isLevelCompleted(level)
+            const markerColor = completed
+              ? 'border-cyber-success text-cyber-success shadow-[0_0_15px_rgba(34,197,94,0.55)]'
+              : level.unlocked
+                ? 'border-cyber-danger text-cyber-danger shadow-[0_0_15px_rgba(255,59,59,0.5)]'
+                : 'border-gray-600 text-gray-500'
+            const labelColor = completed
+              ? 'bg-cyber-success text-black'
+              : level.unlocked
+                ? 'bg-cyber-danger text-white'
+                : 'bg-gray-800 text-gray-400'
+
+            return (
+              <div
+                key={level.id}
+                className="absolute"
+                style={{ 
+                  left: `${level.x_percent}%`, 
+                  top: `${level.y_percent}%`,
+                  transform: 'translate(-50%, -50%)'
+                }}
+                onMouseEnter={() => setHoveredLevel(level)}
+                onMouseLeave={() => setHoveredLevel(null)}
               >
-                {/* Ping Animation */}
-                {level.unlocked && (
-                  <>
-                    <span className="absolute w-12 h-12 bg-cyber-danger/30 rounded-full animate-ping" />
-                    <span className="absolute w-8 h-8 bg-cyber-danger/40 rounded-full animate-pulse" />
-                  </>
-                )}
-
-                {/* Marker Body */}
-                <div className={`
-                  relative z-10 w-10 h-10 rounded-full border-2 flex items-center justify-center
-                  shadow-[0_0_15px_rgba(255,59,59,0.5)] transition-colors
-                  ${level.unlocked 
-                    ? 'bg-black border-cyber-danger text-cyber-danger' 
-                    : 'bg-gray-900 border-gray-600 text-gray-500'}
-                `}>
-                  {level.unlocked ? (
-                    <MapPin size={20} fill="currentColor" fillOpacity={0.2} />
-                  ) : (
-                    <Lock size={16} />
+                <Link
+                  to={level.unlocked ? `/level/${level.id}` : '#'}
+                  className={`relative flex items-center justify-center transition-all duration-300 ${
+                    level.unlocked 
+                      ? 'cursor-pointer hover:scale-125' 
+                      : 'cursor-not-allowed opacity-60 grayscale'
+                  }`}
+                >
+                  {/* Ping Animation */}
+                  {level.unlocked && (
+                    <>
+                      <span className={`absolute w-12 h-12 rounded-full animate-ping ${completed ? 'bg-cyber-success/30' : 'bg-cyber-danger/30'}`} />
+                      <span className={`absolute w-8 h-8 rounded-full animate-pulse ${completed ? 'bg-cyber-success/40' : 'bg-cyber-danger/40'}`} />
+                    </>
                   )}
-                </div>
 
-                {/* Level Tag (Label) */}
-                <div className={`
-                  absolute top-12 left-1/2 -translate-x-1/2 whitespace-nowrap px-3 py-1 rounded-full
-                  text-[10px] font-mono tracking-tighter uppercase transition-all duration-300
-                  ${hoveredLevel?.id === level.id ? 'opacity-100 translate-y-0' : 'opacity-0 -translate-y-2'}
-                  ${level.unlocked ? 'bg-cyber-danger text-white' : 'bg-gray-800 text-gray-400'}
-                `}>
-                  {level.name}
-                </div>
-              </Link>
-            </div>
-          ))}
+                  {/* Marker Body */}
+                  <div className={`
+                    relative z-10 w-10 h-10 rounded-full border-2 flex items-center justify-center
+                    bg-black transition-colors ${markerColor}
+                  `}>
+                    {completed ? (
+                      <CheckCircle2 size={20} fill="currentColor" fillOpacity={0.2} />
+                    ) : level.unlocked ? (
+                      <MapPin size={20} fill="currentColor" fillOpacity={0.2} />
+                    ) : (
+                      <Lock size={16} />
+                    )}
+                  </div>
+
+                  {/* Level Tag (Label) */}
+                  <div className={`
+                    absolute top-12 left-1/2 -translate-x-1/2 whitespace-nowrap px-3 py-1 rounded-full
+                    text-[10px] font-mono tracking-tighter uppercase transition-all duration-300
+                    ${hoveredLevel?.id === level.id ? 'opacity-100 translate-y-0' : 'opacity-0 -translate-y-2'}
+                    ${labelColor}
+                  `}>
+                    {completed ? `${level.name} - completed` : level.name}
+                  </div>
+                </Link>
+              </div>
+            )
+          })}
         </div>
 
         {/* Floating Level Info Panel */}
@@ -155,9 +188,13 @@ export default function MissionMap() {
             {hoveredLevel.unlocked ? (
               <Link 
                 to={`/level/${hoveredLevel.id}`}
-                className="flex items-center justify-center w-full gap-2 py-3 bg-cyber-danger hover:bg-red-600 text-white text-xs font-bold uppercase tracking-widest rounded-xl transition-colors group/btn"
+                className={`flex items-center justify-center w-full gap-2 py-3 text-xs font-bold uppercase tracking-widest rounded-xl transition-colors group/btn ${
+                  isLevelCompleted(hoveredLevel)
+                    ? 'bg-cyber-success hover:bg-green-400 text-black'
+                    : 'bg-cyber-danger hover:bg-red-600 text-white'
+                }`}
               >
-                Infiltrate Now
+                {isLevelCompleted(hoveredLevel) ? 'Review Completed Node' : 'Infiltrate Now'}
                 <ChevronRight size={14} className="group-hover/btn:translate-x-1 transition-transform" />
               </Link>
             ) : (
@@ -171,26 +208,28 @@ export default function MissionMap() {
 
         {/* Global Stats Overlay */}
         <div className="absolute top-8 right-8 z-30 hidden lg:block">
-          <div className="bg-black/40 backdrop-blur-sm border border-white/5 rounded-2xl p-4 space-y-4 w-48">
+          <div className="bg-cyan-950/30 backdrop-blur-sm border border-cyber-accent/25 rounded-2xl p-4 space-y-4 w-48 shadow-[0_0_24px_rgba(0,229,255,0.18)]">
             <div>
               <div className="text-[9px] text-gray-500 uppercase tracking-widest mb-1">Nodes Compromised</div>
               <div className="flex items-center gap-2">
                 <div className="flex-1 h-1 bg-white/10 rounded-full overflow-hidden">
-                  <div className="h-full bg-cyber-accent w-2/5" />
+                  <div className="h-full bg-cyber-accent" style={{ width: `${nodeProgressPercent}%` }} />
                 </div>
-                <span className="text-xs font-mono text-white">02/05</span>
+                <span className="text-xs font-mono text-white">
+                  {String(completedCount).padStart(2, '0')}/{String(levels.length).padStart(2, '0')}
+                </span>
               </div>
             </div>
             <div>
               <div className="text-[9px] text-gray-500 uppercase tracking-widest mb-1">Signal Strength</div>
               <div className="flex items-center gap-2">
-                <div className="flex-1 h-1 bg-white/10 rounded-full overflow-hidden flex gap-0.5">
-                  <div className="h-full bg-green-500 w-1/4" />
-                  <div className="h-full bg-green-500 w-1/4" />
-                  <div className="h-full bg-green-500 w-1/4" />
-                  <div className="h-full bg-white/10 w-1/4" />
+                <div className="flex-1 h-1 bg-white/10 rounded-full overflow-hidden">
+                  <div className="h-full bg-cyber-accent" style={{ width: `${taskProgressPercent}%` }} />
                 </div>
-                <span className="text-xs font-mono text-green-500">75%</span>
+                <span className="text-xs font-mono text-cyber-accent">{Math.round(taskProgressPercent)}%</span>
+              </div>
+              <div className="mt-1 text-[9px] text-gray-600 font-mono">
+                {completedTaskCount}/{totalTaskCount} tasks
               </div>
             </div>
           </div>

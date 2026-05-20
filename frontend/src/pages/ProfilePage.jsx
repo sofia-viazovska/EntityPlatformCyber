@@ -1,7 +1,9 @@
 import { useState, useEffect } from 'react'
-import { api } from '../api/client'
+import { useNavigate } from 'react-router-dom'
+import { api, setToken } from '../api/client'
 
 export default function ProfilePage() {
+  const navigate = useNavigate()
   const [user, setUser] = useState(null)
   const [name, setName] = useState('')
   const [loading, setLoading] = useState(true)
@@ -19,7 +21,12 @@ export default function ProfilePage() {
       setName(response.data.name || '')
     } catch (error) {
       console.error('Error fetching profile:', error)
-      setMessage({ type: 'error', text: 'Failed to load profile.' })
+      if (error.response?.status === 401) {
+        setToken(null)
+        navigate('/auth', { replace: true })
+        return
+      }
+      setMessage({ type: 'error', text: error.response?.data?.detail || 'Failed to load profile.' })
     } finally {
       setLoading(false)
     }
@@ -30,15 +37,17 @@ export default function ProfilePage() {
     setSaving(true)
     setMessage({ type: '', text: '' })
     try {
-      const response = await api.put('/users/me', { 
-        email: user.email,
-        name: name 
-      })
+      const response = await api.put('/users/me', { name })
       setUser(response.data)
       setMessage({ type: 'success', text: 'Profile updated successfully!' })
     } catch (error) {
       console.error('Error updating profile:', error)
-      setMessage({ type: 'error', text: 'Failed to update profile.' })
+      if (error.response?.status === 401) {
+        setToken(null)
+        navigate('/auth', { replace: true })
+        return
+      }
+      setMessage({ type: 'error', text: error.response?.data?.detail || 'Failed to update profile.' })
     } finally {
       setSaving(false)
     }
@@ -48,6 +57,14 @@ export default function ProfilePage() {
     return (
       <div className="flex items-center justify-center min-h-[60vh]">
         <div className="text-cyber-accent animate-pulse font-mono tracking-widest uppercase">Initializing Profile...</div>
+      </div>
+    )
+  }
+
+  if (!user) {
+    return (
+      <div className="flex items-center justify-center min-h-[60vh]">
+        <div className="text-red-400 font-mono tracking-widest uppercase">Profile unavailable. Please log in again.</div>
       </div>
     )
   }

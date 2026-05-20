@@ -1,8 +1,8 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from jose import JWTError, jwt
-from datetime import datetime
+from datetime import datetime, timezone
 from sqlalchemy.sql import func
 from app.db.session import get_db
 from app.models import models
@@ -13,8 +13,19 @@ import hashlib
 router = APIRouter()
 
 MAX_ATTEMPTS_PER_LEVEL = 5
+POINTS_PER_PART = 25
+LEVEL_FULL_SCORE = 100
+LEVEL_UNLOCK_SCORE = 75
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/login")
+
+
+def as_utc(value: datetime | None) -> datetime | None:
+    if value is None:
+        return None
+    if value.tzinfo is None:
+        return value.replace(tzinfo=timezone.utc)
+    return value.astimezone(timezone.utc)
 
 
 def is_level_unlocked(db: Session, user_id: int, level: models.Level) -> bool:
@@ -30,7 +41,7 @@ def is_level_unlocked(db: Session, user_id: int, level: models.Level) -> bool:
     if not prev:
         return True
     
-    # Need 60 points in previous level to unlock next
+    # Need three solved parts in previous level to unlock next
     res = (
         db.query(func.count(models.Submission.id))
         .filter(
@@ -40,9 +51,9 @@ def is_level_unlocked(db: Session, user_id: int, level: models.Level) -> bool:
         )
         .scalar()
     )
-    points_in_prev = (res or 0) * 20
+    points_in_prev = (res or 0) * POINTS_PER_PART
     
-    return points_in_prev >= 60
+    return points_in_prev >= LEVEL_UNLOCK_SCORE
 
 
 async def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(get_db)):
@@ -119,7 +130,7 @@ def get_me(current_user: models.User = Depends(get_current_user)):
 
 @router.put("/users/me", response_model=schemas.UserResponse)
 def update_me(
-    user_update: schemas.UserBase,
+    user_update: schemas.UserUpdate,
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_user)
 ):
@@ -214,10 +225,12 @@ def submit_answer(
     if not game_state:
         raise HTTPException(status_code=400, detail="No active game")
     
-    now = datetime.utcnow()
-    if game_state.start_time and now < game_state.start_time:
+    now = datetime.now(timezone.utc)
+    start_time = as_utc(game_state.start_time)
+    end_time = as_utc(game_state.end_time)
+    if start_time and now < start_time:
         raise HTTPException(status_code=400, detail="Game has not started yet")
-    if game_state.end_time and now > game_state.end_time:
+    if end_time and now > end_time:
         raise HTTPException(status_code=400, detail="Game has ended")
 
     level = db.query(models.Level).filter(models.Level.id == submission.level_id).first()
@@ -228,9 +241,16 @@ def submit_answer(
     if not is_level_unlocked(db, current_user.id, level):
         raise HTTPException(status_code=403, detail="Level is locked")
 
+    locked_user = (
+        db.query(models.User)
+        .filter(models.User.id == current_user.id)
+        .with_for_update()
+        .one()
+    )
+
     # Attempt limits per user/level/part
     attempts_count = db.query(models.Submission).filter(
-        models.Submission.user_id == current_user.id,
+        models.Submission.user_id == locked_user.id,
         models.Submission.level_id == level.id,
         models.Submission.part == submission.part,
     ).count()
@@ -256,7 +276,7 @@ def submit_answer(
 
     # Check if already solved to avoid double points
     existing_correct = db.query(models.Submission).filter(
-        models.Submission.user_id == current_user.id,
+        models.Submission.user_id == locked_user.id,
         models.Submission.level_id == level.id,
         models.Submission.part == submission.part,
         models.Submission.is_correct == True
@@ -264,14 +284,14 @@ def submit_answer(
 
     # Re-fetch attempts count to avoid race conditions or use current count
     attempts_count = db.query(models.Submission).filter(
-        models.Submission.user_id == current_user.id,
+        models.Submission.user_id == locked_user.id,
         models.Submission.level_id == level.id,
         models.Submission.part == submission.part,
     ).count()
 
     # Record submission
     new_submission = models.Submission(
-        user_id=current_user.id,
+        user_id=locked_user.id,
         level_id=level.id,
         part=submission.part,
         answer=submission.answer,
@@ -282,8 +302,8 @@ def submit_answer(
 
     if is_correct:
         if not existing_correct:
-            current_user.total_score += 20
-            db.add(current_user)
+            locked_user.total_score += POINTS_PER_PART
+            db.add(locked_user)
             message = "Correct!"
         else:
             message = "Already solved!"
@@ -315,7 +335,7 @@ def increase_attempts(
     
     # Calculate score based on unique solved parts
     solved_parts = {s.part for s in submissions if s.is_correct}
-    score = len(solved_parts) * 20
+    score = len(solved_parts) * POINTS_PER_PART
     
     # Check if any unsolved part has exhausted its attempts
     parts = ['a', '2', '3', 'final']
@@ -332,7 +352,7 @@ def increase_attempts(
     if not any_unsolved_exhausted:
         raise HTTPException(status_code=400, detail="No unsolved part has exhausted its attempts yet")
     
-    if score >= 80:
+    if score >= LEVEL_FULL_SCORE:
         raise HTTPException(status_code=400, detail="Level is already fully solved")
     
     # Reset attempts for exhausted unsolved parts
@@ -356,8 +376,12 @@ def increase_attempts(
     db.commit()
     return {"message": f"Added 2 attempts for parts: {', '.join(exhausted_parts)}"}
 
-@router.get("/leaderboard", response_model=list[schemas.LeaderboardEntry])
-def get_leaderboard(db: Session = Depends(get_db)):
+@router.get("/leaderboard", response_model=schemas.LeaderboardResponse)
+def get_leaderboard(
+    page: int = Query(1, ge=1),
+    page_size: int = Query(10, ge=1, le=50),
+    db: Session = Depends(get_db)
+):
     users = db.query(models.User).all()
     levels = db.query(models.Level).order_by(models.Level.order_index).all()
     
@@ -365,14 +389,14 @@ def get_leaderboard(db: Session = Depends(get_db)):
     for user in users:
         level_scores = []
         for level in levels:
-            # Calculate score for this level based on unique solved parts (20 points each)
+            # Calculate score for this level based on unique solved parts
             solved_parts = db.query(models.Submission.part).filter(
                 models.Submission.user_id == user.id,
                 models.Submission.level_id == level.id,
                 models.Submission.is_correct == True
             ).distinct().all()
             
-            level_score = len(solved_parts) * 20
+            level_score = len(solved_parts) * POINTS_PER_PART
             level_scores.append(schemas.LevelScore(
                 level_id=level.id,
                 level_name=level.name,
@@ -390,7 +414,20 @@ def get_leaderboard(db: Session = Depends(get_db)):
     
     # Sort leaderboard by total_calculated_score desc
     leaderboard.sort(key=lambda x: x.total_score, reverse=True)
-    return leaderboard[:10]
+
+    total = len(leaderboard)
+    total_pages = max(1, (total + page_size - 1) // page_size)
+    page = min(page, total_pages)
+    start = (page - 1) * page_size
+    end = start + page_size
+
+    return schemas.LeaderboardResponse(
+        entries=leaderboard[start:end],
+        page=page,
+        page_size=page_size,
+        total=total,
+        total_pages=total_pages,
+    )
 
 @router.get("/game-state", response_model=schemas.GameStateResponse)
 def get_game_state(db: Session = Depends(get_db)):
